@@ -225,7 +225,7 @@ st.markdown("""
 st.markdown("""
 <div class="stats">
   <div class="stat"><div class="stat-value">243</div><div class="stat-label">Cows</div></div>
-  <div class="stat"><div class="stat-value">83.2%</div><div class="stat-label">Val Accuracy</div><div class="stat-note">on 243-cow benchmark</div></div>
+  <div class="stat"><div class="stat-value">87.96%</div><div class="stat-label">Best Val Accuracy</div><div class="stat-note">on 243-cow benchmark</div></div>
   <div class="stat"><div class="stat-value">&lt; 3s</div><div class="stat-label">Verification</div></div>
   <div class="stat"><div class="stat-value">24/7</div><div class="stat-label">Audit Trail</div></div>
 </div>
@@ -273,6 +273,21 @@ st.markdown("""
     <div class="feature-title">Audit Trail</div>
     <p class="feature-text">Every verification logged, timestamped, and traceable for the insurer.</p>
   </div>
+</div>
+""", unsafe_allow_html=True)
+
+# --- AI Model ---
+st.markdown("""
+<div class="section-title">🧠 AI Model</div>
+<div class="section-sub">Performance of the trained muzzle-recognition model used by Verify and Register.</div>
+<div class="stats">
+  <div class="stat"><div class="stat-value">ResNet50</div><div class="stat-label">Model</div></div>
+  <div class="stat"><div class="stat-value">320 × 320</div><div class="stat-label">Input Size</div></div>
+  <div class="stat"><div class="stat-value">512</div><div class="stat-label">Embedding Dimension</div></div>
+  <div class="stat"><div class="stat-value">87.96%</div><div class="stat-label">Best Validation Accuracy</div></div>
+  <div class="stat"><div class="stat-value">86.41%</div><div class="stat-label">Test Classification Accuracy</div><div class="stat-note">Model evaluation metric — not a real-world verification accuracy</div></div>
+  <div class="stat"><div class="stat-value">0.952</div><div class="stat-label">High Confidence Threshold</div></div>
+  <div class="stat"><div class="stat-value">0.925</div><div class="stat-label">Low Confidence Threshold</div></div>
 </div>
 """, unsafe_allow_html=True)
 

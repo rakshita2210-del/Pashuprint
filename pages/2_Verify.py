@@ -4,7 +4,8 @@ import time
 
 from backend import db
 from backend.services.mock_ml import mock_muzzle_verification
-from matching import find_matches_multi
+from cattle_gate import assess_cattle_likeness
+from matching import find_matches_multi, embed_query_average, rank_against_registered
 from utils.ui import (
     inject_css,
     hero,
@@ -32,6 +33,10 @@ hero(
     "Upload 3 muzzle photos of the same cow to verify identity",
     "🔍",
 )
+
+if not db.get_all_animals():
+    warn_strip("No animals registered yet — register one first")
+    st.stop()
 
 
 def _mock_verification(image_paths):
@@ -68,7 +73,23 @@ def _mock_verification(image_paths):
 
 
 def _run_verification(image_paths):
-    """Run the real multi-image muzzle verification."""
+    """Run the real multi-image muzzle verification.
+
+    Cattle/muzzle DOMAIN gate runs FIRST, on every uploaded photo. An
+    image that fails it can never reach find_matches_multi() (and so can
+    never reach embed_image() or produce a MATCHED result) -- the whole
+    batch is refused outright."""
+
+    for p in image_paths:
+        gate = assess_cattle_likeness(p)
+        if not gate["is_cattle_like"]:
+            return {
+                "status": "invalid_image",
+                "top_matches": [],
+                "quality_ok": False,
+                "model_loaded": True,
+                "invalid_reason": gate["reason"],
+            }
 
     try:
         result = find_matches_multi(
@@ -82,14 +103,50 @@ def _run_verification(image_paths):
         result = _mock_verification(image_paths)
         result["model_loaded"] = False
 
+    # If quality/consistency are fine, ALSO compare against ACTUAL
+    # registered animals' own reference embeddings (stored at registration
+    # time -- see pages/1_Register.py). This is the real "does this match
+    # an enrolled cow" check; a registered-animal match takes priority
+    # over the raw ML-gallery result below.
+    if result["status"] not in ("unusable", "inconsistent_images") and result.get("model_loaded"):
+        registered = []
+        for animal in db.get_all_animals():
+            vec = db.get_embedding(animal["cow_id"])
+            if vec is not None:
+                registered.append((animal["cow_id"], vec))
+
+        if registered:
+            try:
+                query = embed_query_average(image_paths)
+                reg_result = rank_against_registered(query, registered, top_k=3)
+                if reg_result["status"] in ("high_confidence", "low_confidence"):
+                    reg_result["model_loaded"] = True
+                    result = reg_result
+            except ValueError:
+                pass  # fall through to the existing gallery-based result
+
     for match in result.get("top_matches", []):
         animal = db.get_animal(match["cow_id"])
 
+        match["is_enrolled"] = animal is not None
         match["photo_path"] = (
             animal["muzzle_photo_path"]
             if animal
             else None
         )
+
+    # find_matches_multi() ranks against the full ML REFERENCE gallery,
+    # which includes dataset identities (e.g. "cattle_1200") that were
+    # never enrolled through this app. Only a match against an animal
+    # ACTUALLY stored in the `animals` table is an application-level
+    # identification -- a gallery-only hit is never presented as a
+    # matched/enrolled cow, in the verdict OR in the Top Matches cards.
+    enrolled_matches = [m for m in result.get("top_matches", []) if m["is_enrolled"]]
+
+    if result["status"] in ("high_confidence", "low_confidence") and not enrolled_matches:
+        result["status"] = "no_match"
+
+    result["top_matches"] = enrolled_matches
 
     return result
 
@@ -261,8 +318,25 @@ with c2:
                         f"Uploaded photos matched different cows: {', '.join(seen_cow_ids)}",
                     )
 
+                elif status == "invalid_image":
+                    verdict_banner(status)
+
+                    db.log_verification(
+                        cow_id="UNKNOWN",
+                        verification_type="claim",
+                        result_status="invalid_image",
+                        photo_path=st.session_state.verify_paths[0],
+                    )
+
+                    db.add_fraud_flag(
+                        "UNKNOWN",
+                        "invalid_image_claim",
+                        result.get("invalid_reason") or "Uploaded photo does not appear to be a cattle muzzle",
+                    )
+
                 else:
                     verdict_banner(status)
+                    info_strip("Falls back to existing manual process.")
 
                     db.log_verification(
                         cow_id="UNKNOWN",

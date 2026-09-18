@@ -110,13 +110,15 @@ def verdict_banner(status, cow_id=None, score=None):
     if status == "high_confidence":
         st.markdown(f'<div class="verdict verdict-matched">✅ MATCHED &nbsp;·&nbsp; Cow #{cow_id} &nbsp;·&nbsp; {score*100:.1f}%</div>', unsafe_allow_html=True)
     elif status == "low_confidence":
-        st.markdown('<div class="verdict verdict-low">⚠️ LOW CONFIDENCE — Manual review required</div>', unsafe_allow_html=True)
+        st.markdown('<div class="verdict verdict-low">⚠️ LOW CONFIDENCE — MANUAL REVIEW REQUIRED</div>', unsafe_allow_html=True)
     elif status == "no_match":
         st.markdown('<div class="verdict verdict-none">❌ NO MATCH FOUND</div>', unsafe_allow_html=True)
     elif status == "inconsistent_images":
         st.markdown('<div class="verdict verdict-none">🚫 INCONSISTENT PHOTOS — Images do not match the same cow</div>', unsafe_allow_html=True)
+    elif status == "invalid_image":
+        st.markdown('<div class="verdict verdict-none">❌ INVALID IMAGE — Please upload a clear cattle muzzle photo</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="verdict verdict-unusable">⚪ CANNOT VERIFY — Image unusable</div>', unsafe_allow_html=True)
+        st.markdown('<div class="verdict verdict-unusable">⚪ CANNOT VERIFY — image unusable</div>', unsafe_allow_html=True)
 
 
 def match_card(cow_id, score, image_path=None, rank=1):

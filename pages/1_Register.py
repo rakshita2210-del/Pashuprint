@@ -5,7 +5,9 @@ import numpy as np
 
 from backend import db
 from backend.dup_check import check_duplicate
-from utils.mock_backend import find_matches, get_all_embeddings, get_embedding_for_image
+from cattle_gate import assess_cattle_likeness
+from matching import find_matches, embed_query_average
+from utils.mock_backend import get_all_embeddings, get_embedding_for_image
 from utils.ui import inject_css, hero, info_strip, warn_strip
 
 st.set_page_config(page_title="Register Cow", page_icon="📝", layout="wide", initial_sidebar_state="collapsed")
@@ -54,22 +56,79 @@ if st.session_state.reg_step == "upload":
         if n >= 3:
             st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
             if st.button("✅  Check & Continue", type="primary", use_container_width=True):
+                # --- Cattle/muzzle DOMAIN gate -- runs before anything else.
+                # An image that fails this can never reach check_duplicate(),
+                # embed_image(), or find_matches(); registration is refused
+                # outright and no id is generated. ---
+                for p in st.session_state.reg_paths:
+                    gate = assess_cattle_likeness(p)
+                    if not gate["is_cattle_like"]:
+                        st.error("❌ INVALID IMAGE — Please upload a clear cattle muzzle photo")
+                        if gate["reason"]:
+                            st.caption(gate["reason"])
+                        st.stop()
+
+                # --- Exact/near-identical PHOTO re-upload check (perceptual hash,
+                # NOT biometric -- backend/dup_check.py) ---
                 all_paths = db.get_all_photo_paths()
                 for p in st.session_state.reg_paths:
                     dup = check_duplicate(p, all_paths)
                     if dup["is_duplicate"]:
-                        st.error("❌ One of these photos already exists in the system")
+                        st.error("❌ This exact photo already exists in the system")
                         db.add_fraud_flag("UNKNOWN", "duplicate_photo", f"Matched {dup['matched_photo_path']}")
                         st.stop()
 
+                # --- REAL muzzle-identity check against the trained ResNet50
+                # gallery (matching.find_matches) -- NOT mock ML. This is the
+                # actual registration decision. ---
                 with st.spinner("Checking against database..."):
-                    results = [find_matches(p) for p in st.session_state.reg_paths]
+                    results = []
+                    for p in st.session_state.reg_paths:
+                        try:
+                            results.append(find_matches(p))
+                        except ValueError:
+                            # Unreadable file -- treat the same as a blurry/unusable photo.
+                            results.append({"status": "unusable", "top_matches": [], "quality_ok": False})
 
+                # Blurry/unusable photo -> reject, let the agent retake.
                 for r in results:
+                    if r["status"] == "unusable":
+                        warn_strip("📷 Photo too blurry — please retake")
+                        st.stop()
+
+                # Already-enrolled cow -> block registration, show proof, flag it.
+                #
+                # matching.find_matches() searches the ML REFERENCE gallery
+                # (data/embeddings.npy / embeddings_meta.csv), which is keyed
+                # by dataset identities like "cattle_1200" -- internal ML
+                # reference data, NOT PashuPrint-enrolled livestock. Only a
+                # match against an animal ACTUALLY stored in the `animals`
+                # table counts as "already enrolled". A gallery-only hit
+                # (matched_animal is None) is never shown as an enrolled cow
+                # and never blocks registration -- if nothing is enrolled yet
+                # (animals table empty), no gallery match can block anything.
+                for r, p in zip(results, st.session_state.reg_paths):
                     if r["status"] == "high_confidence":
                         match = r["top_matches"][0]
-                        st.error(f"⚠️ Already enrolled as Cow #{match['cow_id']} ({match['score']*100:.1f}% match)")
-                        db.add_fraud_flag(match["cow_id"], "duplicate_registration", f"Score {match['score']:.2f}")
+                        matched_cow_id = match["cow_id"]
+                        matched_animal = db.get_animal(matched_cow_id)
+
+                        if matched_animal is None:
+                            # ML gallery/reference identity only -- not an
+                            # application-enrolled animal. Not a duplicate.
+                            continue
+
+                        st.error(f"⚠️ Already enrolled as Cow #{matched_cow_id} ({match['score']*100:.1f}% match)")
+
+                        matched_photo = matched_animal.get("muzzle_photo_path")
+                        if matched_photo and os.path.exists(matched_photo):
+                            side1, side2 = st.columns(2)
+                            with side1:
+                                st.image(p, caption="Uploaded photo", use_container_width=True)
+                            with side2:
+                                st.image(matched_photo, caption=f"Stored photo — Cow #{matched_cow_id}", use_container_width=True)
+
+                        db.add_fraud_flag(matched_cow_id, "duplicate_registration", f"Score {match['score']:.2f}")
                         st.stop()
 
                 st.success("✅  New animal — not in database")
@@ -120,6 +179,17 @@ elif st.session_state.reg_step == "details":
                     st.stop()
 
                 cow_id = animal["cow_id"]
+
+                # Store this animal's OWN reference embedding (averaged
+                # across its registration photos) so Verify can compare
+                # future claim photos against actual enrolled animals, not
+                # just the internal ML reference gallery.
+                try:
+                    reference_vector = embed_query_average(st.session_state.reg_paths)
+                    db.add_embedding(cow_id, reference_vector.tolist())
+                except ValueError:
+                    pass  # photos already passed the blur gate above; defensive only
+
                 for p in st.session_state.reg_paths:
                     db.log_verification(
                         cow_id=cow_id, verification_type="register",
@@ -136,4 +206,3 @@ elif st.session_state.reg_step == "details":
             st.session_state.reg_step = "upload"
             st.session_state.reg_paths = []
             st.rerun()
-            

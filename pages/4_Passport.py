@@ -19,7 +19,7 @@ hero("Livestock Passport", "Official identity record, muzzle photo, and verifica
 all_animals = db.get_all_animals()
 
 if not all_animals:
-    st.info("ℹ️ No animals currently registered in the database.")
+    st.info("ℹ️ No animals in database")
 else:
     # --- UI/UX: Better selector design ---
     st.markdown("### 🔍 Search Registry")
@@ -66,9 +66,22 @@ else:
 
             with col3:
                 # --- QR CODE GENERATION ---
+                # No fixed public URL for this local/demo deployment, so the QR
+                # encodes a structured text payload built entirely from the
+                # selected cow's real database record (no hardcoded details).
                 st.markdown("<div style='text-align: center; color: gray;'>Scan to Verify</div>", unsafe_allow_html=True)
+                passport_payload = (
+                    "PashuPrint Livestock Passport\n"
+                    f"Cow ID: {cow_data.get('cow_id')}\n"
+                    f"Breed: {cow_data.get('breed')}\n"
+                    f"Age: {cow_data.get('age')} Yrs\n"
+                    f"Owner: {cow_data.get('owner_name')}\n"
+                    f"Policy ID: {cow_data.get('policy_id')}\n"
+                    f"Status: {cow_data.get('status')}\n"
+                    f"Registered: {cow_data.get('registration_date')}"
+                )
                 qr = qrcode.QRCode(box_size=4, border=1)
-                qr.add_data(str(selected_cow_id))
+                qr.add_data(passport_payload)
                 qr.make(fit=True)
                 img_qr = qr.make_image(fill_color="#064e3b", back_color="white")
 

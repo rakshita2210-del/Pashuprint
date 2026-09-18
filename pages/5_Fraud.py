@@ -16,7 +16,7 @@ hero("Fraud Dashboard", "Every duplicate, mismatch, and low-confidence claim fla
 flags = db.get_all_fraud_flags()
 
 if not flags:
-    info_strip("✅ No fraud flags recorded yet — every registration and verification has cleared cleanly.")
+    info_strip("✅ No flags raised — every registration and verification has cleared cleanly.")
     st.stop()
 
 df = pd.DataFrame(flags)
@@ -30,6 +30,21 @@ most_common = df["flag_type"].value_counts().idxmax()
 m4.metric("Most common", most_common.replace("_", " ").title())
 
 st.divider()
+
+# --- JUMP TO PASSPORT ---
+flagged_cow_ids = sorted({cid for cid in df["cow_id"].unique() if cid != "UNKNOWN"})
+if flagged_cow_ids:
+    st.markdown("### 🪪 View Animal")
+    j1, j2 = st.columns([3, 1])
+    with j1:
+        jump_cow_id = st.selectbox(
+            "Cow ID", options=flagged_cow_ids, label_visibility="collapsed",
+        )
+    with j2:
+        if st.button("🪪 View Passport", use_container_width=True):
+            st.session_state["selected_cow_id"] = jump_cow_id
+            st.switch_page("pages/4_Passport.py")
+    st.divider()
 
 # --- FILTERS ---
 st.markdown("### 🔍 Filter")
