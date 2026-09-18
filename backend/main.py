@@ -1,52 +1,52 @@
 """
 main.py
 -------
-This is the entry point of the PashuPrint backend application.
+Entry point of the PashuPrint backend application.
 
-Running this file (via uvicorn) starts the FastAPI server.
-It is responsible for:
-- Creating the database tables (if they don't exist yet)
-- Setting up CORS so a React frontend can call this API
-- Registering (including) all the route files from routers/
+Running this file (via uvicorn) starts the FastAPI server. It is
+responsible for:
+- Creating the SQLite tables (if they don't exist yet) via db.init_db()
+- Setting up CORS so a future React/Streamlit frontend can call this API
+- Registering all the route files from routers/
 - Providing a simple health-check route at "/"
 """
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import engine, Base
-from routers import registration, verification, claims
+import db
+from routers import registration, verification, claims, fraud
 
-# Create all database tables defined in models.py, if they don't already exist.
-# (In a bigger project you'd use migrations, e.g. Alembic, instead of this.)
-Base.metadata.create_all(bind=engine)
+# Create the SQLite tables defined in db.py, if they don't already exist.
+# db.py is the ONLY place table schemas are defined -- there is no ORM
+# layer duplicating this.
+db.init_db()
 
-# Create the FastAPI app.
-# The title/description show up automatically in the Swagger docs at /docs
 app = FastAPI(
     title="PashuPrint API",
-    description="Livestock biometric identity verification system (backend skeleton). "
-    "ML model responses are currently mocked.",
+    description=(
+        "Livestock biometric identity verification system (backend skeleton). "
+        "ML model responses are currently MOCKED -- see services/mock_ml.py."
+    ),
     version="0.1.0",
 )
 
 # ---------- CORS setup ----------
-# This allows a frontend (e.g. React app running on localhost:3000) to make
-# requests to this backend. For development we allow all origins; tighten
-# this later for production.
+# Allows a frontend (e.g. React on localhost:3000) to call this API.
+# Wide open here for local development only; tighten before deploying.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # Allow all origins (fine for local development)
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],       # Allow all HTTP methods (GET, POST, etc.)
-    allow_headers=["*"],       # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ---------- Register routers ----------
-# Each router file defines a related group of endpoints.
 app.include_router(registration.router)
 app.include_router(verification.router)
 app.include_router(claims.router)
+app.include_router(fraud.router)
 
 
 @app.get("/")
