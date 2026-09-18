@@ -7,3 +7,21 @@ BeefCattle_Muzzle_database/
 *.npy
 __pycache__/
 .ipynb_checkpoints/
+# Python virtual environments
+.venv/
+env/
+
+# Environment variables 
+.env
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Other Python generated files
+*.py[cod]
+
+# IDE
+.vscode/
+.idea/
