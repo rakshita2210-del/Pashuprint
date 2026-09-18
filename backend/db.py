@@ -354,6 +354,9 @@ def get_verifications_for_animal(cow_id: str) -> list[dict]:
         return [dict(r) for r in rows]
     finally:
         conn.close()
+def get_verification_history(cow_id: str) -> list[dict]:
+    """Alias for get_verifications_for_animal() for frontend/API compatibility."""
+    return get_verifications_for_animal(cow_id)
 
 
 # ---------- fraud_flags ----------
@@ -411,3 +414,21 @@ def check_agent_login(agent_id: str, password_hash: str) -> Optional[dict]:
         return _row_to_dict(row)
     finally:
         conn.close()
+# ---------- photo paths ----------
+
+def get_all_photo_paths() -> list[str]:
+    """Fetch all registered muzzle photo paths for duplicate-photo checking."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT muzzle_photo_path
+            FROM animals
+            WHERE muzzle_photo_path IS NOT NULL
+              AND muzzle_photo_path != ''
+            """
+        ).fetchall()
+        return [row["muzzle_photo_path"] for row in rows]
+    finally:
+        conn.close()
+
