@@ -1,67 +1,96 @@
 import streamlit as st
 import os, time
-from utils.mock_backend import find_matches, log_verification, add_fraud_flag
+from utils.mock_backend import find_matches_multi, log_verification, add_fraud_flag
+from utils.ui import inject_css, hero, verdict_banner, match_card, info_strip, warn_strip
 
-st.set_page_config(page_title="Verify Cow", page_icon="🔍", layout="wide")
+st.set_page_config(page_title="Verify Cow", page_icon="🔍", layout="wide", initial_sidebar_state="collapsed")
+inject_css()
 
 if not st.session_state.get("user"):
     st.warning("Please login first")
     st.stop()
 
-st.title("🔍 Verify Cow")
-st.caption("Upload a muzzle photo to verify the animal's identity")
+hero("Verify Cow", "Upload 3 muzzle photos of the same cow to verify identity", "🔍")
 
-uploaded = st.file_uploader("Upload muzzle photo", type=["jpg", "jpeg", "png"])
+c1, c2 = st.columns([1, 1])
 
-if uploaded:
-    os.makedirs("uploads", exist_ok=True)
-    path = f"uploads/claim_{int(time.time())}.jpg"
-    with open(path, "wb") as f:
-        f.write(uploaded.getbuffer())
-    st.image(path, caption="Uploaded photo", width=300)
+with c1:
+    st.markdown("#### 📸 Upload (minimum 3 photos)")
+    uploaded = st.file_uploader(
+        "Drop 3+ muzzle photos of the same cow",
+        type=["jpg", "jpeg", "png"],
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+    )
 
-    if st.button("Verify", type="primary"):
-        with st.spinner("Analyzing..."):
-            result = find_matches(path, top_k=3)
+    if uploaded:
+        os.makedirs("uploads", exist_ok=True)
+        paths = []
+        for i, file in enumerate(uploaded):
+            p = f"uploads/claim_{int(time.time())}_{i}.jpg"
+            with open(p, "wb") as f:
+                f.write(file.getbuffer())
+            paths.append(p)
+        st.session_state.verify_paths = paths
 
-        status = result["status"]
-
-        # --- Verdict banner ---
-        if status == "high_confidence":
-            st.success(f"✅ MATCHED — Cow #{result['top_matches'][0]['cow_id']}")
-            log_verification(result["top_matches"][0]["cow_id"], "claim", path,
-                             result["top_matches"][0]["cow_id"],
-                             result["top_matches"][0]["score"], "high_confidence")
-        elif status == "low_confidence":
-            st.warning("⚠️ LOW CONFIDENCE — MANUAL REVIEW REQUIRED")
-            log_verification(result["top_matches"][0]["cow_id"], "claim", path,
-                             result["top_matches"][0]["cow_id"],
-                             result["top_matches"][0]["score"], "low_confidence")
-            add_fraud_flag(result["top_matches"][0]["cow_id"], "low_confidence_claim",
-                           f"Score {result['top_matches'][0]['score']:.2f} below threshold")
-        elif status == "no_match":
-            st.error("❌ NO MATCH FOUND")
-            log_verification(None, "claim", path, None, None, "no_match")
-            add_fraud_flag(None, "no_match_claim", "No match above threshold")
+        n = len(paths)
+        if n < 3:
+            warn_strip(f"⚠️ {n} photo(s) uploaded — at least 3 required")
         else:
-            st.info("⚪ CANNOT VERIFY — image unusable")
-            st.caption("Falls back to existing manual process")
-            log_verification(None, "claim", path, None, None, "unusable")
-            add_fraud_flag(None, "unusable_claim_image", "Image quality too poor")
+            info_strip(f"✅ {n} photos ready — will be averaged into one identity")
 
-        # --- Top-3 matches ---
-        if result["top_matches"]:
-            st.subheader("Top 3 matches")
-            cols = st.columns(3)
-            for i, m in enumerate(result["top_matches"]):
-                with cols[i]:
-                    if os.path.exists(m["photo_path"]):
-                        st.image(m["photo_path"], width=200)
-                    else:
-                        st.write("_(no image)_")
-                    st.write(f"**Cow #{m['cow_id']}**")
-                    st.progress(min(m["score"], 1.0))
-                    st.write(f"Score: {m['score']*100:.1f}%")
+        cols = st.columns(min(n, 4))
+        for i, p in enumerate(paths):
+            with cols[i % 4]:
+                st.image(p, caption=f"#{i+1}", use_container_width=True)
 
-        if st.button("Verify Another"):
-            st.rerun()
+with c2:
+    st.markdown("#### 🎯 Result")
+    if "verify_paths" not in st.session_state:
+        info_strip("Upload 3 muzzle photos on the left to begin verification.")
+    else:
+        n = len(st.session_state.verify_paths)
+        if n < 3:
+            warn_strip("Need at least 3 photos before verifying.")
+        else:
+            if st.button("🚀  Verify Now", type="primary", use_container_width=True):
+                with st.spinner("Analyzing muzzle patterns..."):
+                    result = find_matches_multi(st.session_state.verify_paths, top_k=3)
+                st.session_state.verify_result = result
+
+            if "verify_result" in st.session_state:
+                result = st.session_state.verify_result
+                status = result["status"]
+
+                if status == "high_confidence":
+                    m = result["top_matches"][0]
+                    verdict_banner(status, m["cow_id"], m["score"])
+                    log_verification(m["cow_id"], "claim", st.session_state.verify_paths[0], m["cow_id"], m["score"], "high_confidence")
+                elif status == "low_confidence":
+                    verdict_banner(status)
+                    m = result["top_matches"][0]
+                    log_verification(m["cow_id"], "claim", st.session_state.verify_paths[0], m["cow_id"], m["score"], "low_confidence")
+                    add_fraud_flag(m["cow_id"], "low_confidence_claim", f"Score {m['score']:.2f}")
+                elif status == "no_match":
+                    verdict_banner(status)
+                    log_verification(None, "claim", st.session_state.verify_paths[0], None, None, "no_match")
+                    add_fraud_flag(None, "no_match_claim", "No match above threshold")
+                else:
+                    verdict_banner(status)
+                    log_verification(None, "claim", st.session_state.verify_paths[0], None, None, "unusable")
+                    add_fraud_flag(None, "unusable_claim_image", "All photos were unusable")
+
+if "verify_result" in st.session_state and st.session_state.verify_result["top_matches"]:
+    st.markdown("### 🏆 Top 3 Matches")
+    cols = st.columns(3)
+    for i, m in enumerate(st.session_state.verify_result["top_matches"]):
+        with cols[i]:
+            img = m["photo_path"] if os.path.exists(m["photo_path"]) else None
+            match_card(m["cow_id"], m["score"], image_path=img, rank=i+1)
+
+    st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
+    if st.button("🔄  Verify Another"):
+        st.session_state.pop("verify_result", None)
+        st.session_state.pop("verify_paths", None)
+        st.rerun()
+        
