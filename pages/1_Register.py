@@ -1,10 +1,11 @@
 import streamlit as st
 import os, time
+import sqlite3
 import numpy as np
-from utils.mock_backend import (
-    find_matches, check_duplicate, register_animal, log_verification,
-    add_fraud_flag, get_all_photo_paths, get_all_embeddings, get_embedding_for_image,
-)
+
+from backend import db
+from backend.dup_check import check_duplicate
+from utils.mock_backend import find_matches, get_all_embeddings, get_embedding_for_image
 from utils.ui import inject_css, hero, info_strip, warn_strip
 
 st.set_page_config(page_title="Register Cow", page_icon="📝", layout="wide", initial_sidebar_state="collapsed")
@@ -53,12 +54,12 @@ if st.session_state.reg_step == "upload":
         if n >= 3:
             st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
             if st.button("✅  Check & Continue", type="primary", use_container_width=True):
-                all_paths = get_all_photo_paths()
+                all_paths = db.get_all_photo_paths()
                 for p in st.session_state.reg_paths:
                     dup = check_duplicate(p, all_paths)
                     if dup["is_duplicate"]:
                         st.error("❌ One of these photos already exists in the system")
-                        add_fraud_flag(None, "duplicate_photo", f"Matched {dup['matched_photo_path']}")
+                        db.add_fraud_flag("UNKNOWN", "duplicate_photo", f"Matched {dup['matched_photo_path']}")
                         st.stop()
 
                 with st.spinner("Checking against database..."):
@@ -68,7 +69,7 @@ if st.session_state.reg_step == "upload":
                     if r["status"] == "high_confidence":
                         match = r["top_matches"][0]
                         st.error(f"⚠️ Already enrolled as Cow #{match['cow_id']} ({match['score']*100:.1f}% match)")
-                        add_fraud_flag(match["cow_id"], "duplicate_registration", f"Score {match['score']:.2f}")
+                        db.add_fraud_flag(match["cow_id"], "duplicate_registration", f"Score {match['score']:.2f}")
                         st.stop()
 
                 st.success("✅  New animal — not in database")
@@ -109,9 +110,21 @@ elif st.session_state.reg_step == "details":
             if not all([breed, owner, policy]):
                 st.error("Please fill all fields")
             else:
-                cow_id = register_animal(breed, age, owner, policy, st.session_state.reg_paths[0])
+                try:
+                    animal = db.register_animal(
+                        owner_name=owner, breed=breed, age=age, policy_id=policy,
+                        muzzle_photo_path=st.session_state.reg_paths[0],
+                    )
+                except sqlite3.IntegrityError:
+                    st.error("Cow ID was just taken by a simultaneous registration — please try again.")
+                    st.stop()
+
+                cow_id = animal["cow_id"]
                 for p in st.session_state.reg_paths:
-                    log_verification(cow_id, "register", p, None, None, "registered")
+                    db.log_verification(
+                        cow_id=cow_id, verification_type="register",
+                        result_status="registered", photo_path=p,
+                    )
                 st.balloons()
                 st.success(f"✅  Registered as Cow #{cow_id}")
                 st.session_state.reg_step = "upload"

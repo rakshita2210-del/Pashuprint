@@ -105,6 +105,11 @@ html, body, [class*="css"] {
     letter-spacing: 0.08em;
     margin-top: 0.45rem;
 }
+.stat-note {
+    font-size: 0.7rem;
+    color: #94a3b8;
+    margin-top: 0.25rem;
+}
 
 .section-title {
     font-size: 1.5rem;
@@ -212,8 +217,8 @@ st.markdown("""
 # --- STATS ---
 st.markdown("""
 <div class="stats">
-  <div class="stat"><div class="stat-value">268</div><div class="stat-label">Cows Enrolled</div></div>
-  <div class="stat"><div class="stat-value">98.7%</div><div class="stat-label">Accuracy</div></div>
+  <div class="stat"><div class="stat-value">243</div><div class="stat-label">Cows</div></div>
+  <div class="stat"><div class="stat-value">83.2%</div><div class="stat-label">Val Accuracy</div><div class="stat-note">on 243-cow benchmark</div></div>
   <div class="stat"><div class="stat-value">&lt; 3s</div><div class="stat-label">Verification</div></div>
   <div class="stat"><div class="stat-value">24/7</div><div class="stat-label">Audit Trail</div></div>
 </div>

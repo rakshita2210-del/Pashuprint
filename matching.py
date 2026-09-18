@@ -104,6 +104,25 @@ def _tier_for_score(score: float) -> str:
     return "no_match"
 
 
+def _rank_gallery(query: np.ndarray, top_k: int) -> dict:
+    """Shared ranking step for find_matches()/find_matches_multi(): score an
+    already-embedded (and already L2-normalized) query vector against the
+    gallery and tier the result."""
+    embeddings, meta = _load_gallery()
+
+    scores = embeddings @ query  # both sides are L2-normalized -> cosine similarity
+    k = min(top_k, len(scores))
+    top_idx = np.argsort(scores)[::-1][:k]
+
+    top_matches = [
+        {"cow_id": str(meta.iloc[i]["cow_id"]), "score": float(scores[i])}
+        for i in top_idx
+    ]
+
+    status = _tier_for_score(top_matches[0]["score"])
+    return {"status": status, "top_matches": top_matches, "quality_ok": True}
+
+
 def find_matches(new_image_path, top_k: int = 3) -> dict:
     """
     Identify the closest cow(s) in the gallery for a new muzzle photo.
@@ -119,17 +138,37 @@ def find_matches(new_image_path, top_k: int = 3) -> dict:
     if variance < BLUR_THRESHOLD:
         return {"status": "unusable", "top_matches": [], "quality_ok": False}
 
-    embeddings, meta = _load_gallery()
     query = embed_image(new_image_path)
+    return _rank_gallery(query, top_k)
 
-    scores = embeddings @ query  # both sides are L2-normalized -> cosine similarity
-    k = min(top_k, len(scores))
-    top_idx = np.argsort(scores)[::-1][:k]
 
-    top_matches = [
-        {"cow_id": str(meta.iloc[i]["cow_id"]), "score": float(scores[i])}
-        for i in top_idx
-    ]
+def find_matches_multi(image_paths, top_k: int = 3) -> dict:
+    """
+    Multi-photo variant of find_matches(): average the embeddings of several
+    photos of the same cow into one identity vector, then rank the gallery
+    exactly like find_matches(). Mirrors its quality gate (per-photo blur
+    check, skipping unusable photos rather than failing outright) and score
+    tiers.
 
-    status = _tier_for_score(top_matches[0]["score"])
-    return {"status": status, "top_matches": top_matches, "quality_ok": True}
+    Same return shape as find_matches(). "unusable" is returned only if
+    every supplied photo failed the blur check.
+    """
+    usable_vectors = []
+    for path in image_paths:
+        try:
+            variance = _blur_variance(path)
+        except ValueError:
+            continue  # unreadable photo -- skip it, keep going
+        if variance < BLUR_THRESHOLD:
+            continue
+        usable_vectors.append(embed_image(path))
+
+    if not usable_vectors:
+        return {"status": "unusable", "top_matches": [], "quality_ok": False}
+
+    query = np.mean(usable_vectors, axis=0)
+    norm = np.linalg.norm(query)
+    if norm > 0:
+        query = query / norm
+
+    return _rank_gallery(query, top_k)

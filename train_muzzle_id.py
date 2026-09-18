@@ -75,10 +75,12 @@ EMBEDDING_DIM = 512
 PHASE1_EPOCHS = 6
 PHASE1_LR = 1e-3
 
-# Phase 2: unfreeze layer4, fine-tune everything above it.
+# Phase 2: unfreeze layer3 and layer4, fine-tune everything above it.
+# layer3 is more general than layer4, so it gets a lower LR to move less.
 PHASE2_EPOCHS = 10
 PHASE2_HEAD_LR = 1e-4
-PHASE2_BACKBONE_LR = 1e-5
+PHASE2_LAYER4_LR = 1e-5
+PHASE2_LAYER3_LR = 1e-6
 
 # ~16 total epochs x ~50 train batches + ~10 val batches on a T4 with AMP
 # comes out to roughly 30-40 minutes. Trim PHASE2_EPOCHS first if you're
@@ -214,9 +216,9 @@ def freeze_backbone(model: MuzzleIDNet) -> None:
 
 
 def unfreeze_last_block(model: MuzzleIDNet) -> None:
-    """Unfreeze only layer4 (the final resnet stage) for phase-2 fine-tuning."""
+    """Unfreeze layer3 and layer4 (the final two resnet stages) for phase-2 fine-tuning."""
     for name, p in model.backbone.named_parameters():
-        if name.startswith("layer4"):
+        if name.startswith("layer3") or name.startswith("layer4"):
             p.requires_grad = True
 
 
@@ -316,7 +318,8 @@ def main():
     unfreeze_last_block(model)
     optimizer = torch.optim.Adam(
         [
-            {"params": model.backbone.layer4.parameters(), "lr": PHASE2_BACKBONE_LR},
+            {"params": model.backbone.layer3.parameters(), "lr": PHASE2_LAYER3_LR},
+            {"params": model.backbone.layer4.parameters(), "lr": PHASE2_LAYER4_LR},
             {"params": head_params, "lr": PHASE2_HEAD_LR},
         ]
     )
