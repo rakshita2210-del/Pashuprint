@@ -1,27 +1,45 @@
-venv/
-data/*
-!data/splits.csv
-BeefCattle_Muzzle_database/
-*.pt
-*.pth
-*.npy
-__pycache__/
+**pycache**/
 .ipynb_checkpoints/
+
 # Python virtual environments
+
 .venv/
 env/
+venv/
 
-# Environment variables 
+# Environment variables
+
 .env
 
 # SQLite databases
+
 *.db
 *.sqlite
 *.sqlite3
 
-# Other Python generated files
+# Python generated files
+
 *.py[cod]
 
 # IDE
+
 .vscode/
 .idea/
+
+# User-uploaded images
+
+uploads/
+
+# ML generated files
+
+data/embeddings.npy
+data/embeddings_meta.csv
+
+# Model checkpoints
+
+models/*.pt
+models/*.pth
+
+# Local dataset
+
+BeefCattle_Muzzle_database/

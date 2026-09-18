@@ -113,6 +113,8 @@ def verdict_banner(status, cow_id=None, score=None):
         st.markdown('<div class="verdict verdict-low">⚠️ LOW CONFIDENCE — Manual review required</div>', unsafe_allow_html=True)
     elif status == "no_match":
         st.markdown('<div class="verdict verdict-none">❌ NO MATCH FOUND</div>', unsafe_allow_html=True)
+    elif status == "inconsistent_images":
+        st.markdown('<div class="verdict verdict-none">🚫 INCONSISTENT PHOTOS — Images do not match the same cow</div>', unsafe_allow_html=True)
     else:
         st.markdown('<div class="verdict verdict-unusable">⚪ CANNOT VERIFY — Image unusable</div>', unsafe_allow_html=True)
 

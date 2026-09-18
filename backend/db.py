@@ -432,3 +432,13 @@ def get_all_photo_paths() -> list[str]:
     finally:
         conn.close()
 
+
+# Ensure the schema exists as soon as this module is imported. main.py
+# (FastAPI) already called init_db() explicitly on its own startup, but
+# Streamlit's pages/*.py import `db` directly and never call it -- they'd
+# otherwise be left talking to a connection with no tables at all. Doing it
+# here, once, guarantees every entry point (FastAPI or any Streamlit page)
+# gets the tables created before it can run a query. CREATE TABLE IF NOT
+# EXISTS makes this a no-op once the schema is already there.
+init_db()
+

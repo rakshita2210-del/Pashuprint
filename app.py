@@ -198,6 +198,13 @@ html, body, [class*="css"] {
 if "user" not in st.session_state:
     st.session_state.user = None
 
+PAGE_MAP = {
+    "register": "pages/1_Register.py",
+    "verify": "pages/2_Verify.py",
+    "passport": "pages/4_Passport.py",
+    "fraud": "pages/5_Fraud.py",
+}
+
 # --- HERO ---
 st.markdown("""
 <div class="hero">
@@ -230,21 +237,21 @@ st.markdown("<div style='height:1.5rem;'></div>", unsafe_allow_html=True)
 if st.session_state.user:
     st.success(f"👋 Logged in as **{st.session_state.user['name']}** ({st.session_state.user['role']})")
 
-c1, c2 = st.columns(2)
-with c1:
-    if st.button("📝  Register Cow", use_container_width=True, type="primary"):
-        if st.session_state.user:
-            st.switch_page("pages/1_Register.py")
-        else:
-            st.session_state.need_login = "register"
-            st.rerun()
-with c2:
-    if st.button("🔍  Verify Cow", use_container_width=True, type="primary"):
-        if st.session_state.user:
-            st.switch_page("pages/2_Verify.py")
-        else:
-            st.session_state.need_login = "verify"
-            st.rerun()
+c1, c2, c3, c4 = st.columns(4)
+button_specs = [
+    (c1, "📝  Register Cow", "register", "primary"),
+    (c2, "🔍  Verify Cow", "verify", "primary"),
+    (c3, "🪪  Livestock Passport", "passport", "secondary"),
+    (c4, "📊  Fraud Dashboard", "fraud", "secondary"),
+]
+for col, label, target, kind in button_specs:
+    with col:
+        if st.button(label, use_container_width=True, type=kind):
+            if st.session_state.user:
+                st.switch_page(PAGE_MAP[target])
+            else:
+                st.session_state.need_login = target
+                st.rerun()
 
 # --- Features ---
 st.markdown("""
@@ -285,7 +292,7 @@ if st.session_state.get("need_login"):
                     st.session_state.user = result
                     target = st.session_state.need_login
                     st.session_state.need_login = None
-                    st.switch_page(f"pages/{'1_Register' if target == 'register' else '2_Verify'}.py")
+                    st.switch_page(PAGE_MAP[target])
                 else:
                     st.error("Invalid credentials")
                     
