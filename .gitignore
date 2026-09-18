@@ -1,5 +1,6 @@
 venv/
-data/
+data/*
+!data/splits.csv
 BeefCattle_Muzzle_database/
 *.pt
 *.pth
