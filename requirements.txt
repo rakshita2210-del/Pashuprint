@@ -5,3 +5,5 @@ pillow
 scikit-learn
 pandas
 streamlit
+timm
+opencv-python
