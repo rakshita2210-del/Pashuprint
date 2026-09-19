@@ -1,110 +1,134 @@
-import streamlit as st
-import pandas as pd
-import qrcode
+import base64
+from html import escape
 from io import BytesIO
 
+import qrcode
+import streamlit as st
+
 from backend import db
-from utils.ui import inject_css, hero
+from utils.ui import (
+    setup_page, page_header, html, section, empty_state, callout, img_uri, fmt_ts,
+)
 
-st.set_page_config(page_title="Livestock Passport", page_icon="🪪", layout="wide", initial_sidebar_state="collapsed")
-inject_css()
+setup_page("Livestock Passport", "🪪", "passport")
 
-if not st.session_state.get("user"):
-    st.warning("Please login first")
-    st.stop()
+page_header(
+    "Livestock Passport",
+    "Official identity record, muzzle photo and verification history for a registered cow.",
+    "🪪", eyebrow="Registry",
+)
 
-hero("Livestock Passport", "Official identity record, muzzle photo, and verification history for a registered cow", "🪪")
+# result_status -> (label, tone). Tones share colours with the rest of the app.
+EVENT_LABELS = {
+    "registered": ("Registered", "good"),
+    "high_confidence": ("Verified — match confirmed", "good"),
+    "low_confidence": ("Low confidence — manual review", "warn"),
+    "no_match": ("No match", "bad"),
+    "inconsistent_images": ("Inconsistent photos", "bad"),
+    "invalid_image": ("Invalid image", "muted"),
+    "unusable": ("Image unusable", "muted"),
+}
+TYPE_LABELS = {"register": "Registration", "claim": "Claim verification", "verify": "Verification"}
 
 # --- EMPTY STATE HANDLING ---
 all_animals = db.get_all_animals()
 
 if not all_animals:
-    st.info("ℹ️ No animals in database")
+    empty_state(
+        "🪪", "No passports yet",
+        "A passport is issued as soon as a cow is registered. Register an animal and its identity record will appear here.",
+        cta=("pages/1_Register.py", "Register a cow", "📝"),
+    )
+    st.stop()
+
+cow_ids = [animal["cow_id"] for animal in all_animals]
+
+default_index = 0
+if "selected_cow_id" in st.session_state and st.session_state["selected_cow_id"] in cow_ids:
+    default_index = cow_ids.index(st.session_state["selected_cow_id"])
+
+section("Find an animal")
+selected_cow_id = st.selectbox(
+    "Select or type a Cow ID to view its passport",
+    options=cow_ids, index=default_index,
+)
+
+cow_data = db.get_animal(selected_cow_id)
+history_data = db.get_verification_history(selected_cow_id)
+
+# --- QR code: no fixed public URL for this local/demo deployment, so the QR
+# encodes a structured text payload built from the selected cow's real record. ---
+passport_payload = (
+    "PashuPrint Livestock Passport\n"
+    f"Cow ID: {cow_data.get('cow_id')}\n"
+    f"Breed: {cow_data.get('breed')}\n"
+    f"Age: {cow_data.get('age')} Yrs\n"
+    f"Owner: {cow_data.get('owner_name')}\n"
+    f"Policy ID: {cow_data.get('policy_id')}\n"
+    f"Status: {cow_data.get('status')}\n"
+    f"Registered: {cow_data.get('registration_date')}"
+)
+qr = qrcode.QRCode(box_size=4, border=1)
+qr.add_data(passport_payload)
+qr.make(fit=True)
+buf = BytesIO()
+qr.make_image(fill_color="#022c22", back_color="white").save(buf, format="PNG")
+qr_uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+photo = img_uri(cow_data.get("muzzle_photo_path"), 640)
+photo_html = f'<img src="{photo}" alt="Muzzle photo"/>' if photo else '<div class="noimg">No muzzle photo on file</div>'
+
+status = cow_data.get("status") or "active"
+status_tone = "good" if status == "active" else "warn"
+
+
+def field(label, value):
+    return f'<div><div class="k">{label}</div><div class="v">{escape(str(value)) if value not in (None, "") else "—"}</div></div>'
+
+
+html(f"""
+<div class="pp">
+  <div class="pp-head">
+    <div class="t">PashuPrint <b>·</b> Livestock Identity Passport</div>
+    <div class="n">No. {escape(str(cow_data.get('cow_id')))}</div>
+  </div>
+  <div class="pp-body">
+    <div class="pp-photo">{photo_html}<div class="pcap">Muzzle print</div></div>
+    <div>
+      <div class="pp-id-lab">Cow ID</div>
+      <div class="pp-id">{escape(str(cow_data.get('cow_id')))}</div>
+      <div class="pp-grid">
+        {field("Owner", cow_data.get("owner_name"))}
+        {field("Policy ID", cow_data.get("policy_id"))}
+        {field("Breed", (cow_data.get("breed") or "").title() or None)}
+        {field("Age", f"{cow_data.get('age')} yrs" if cow_data.get("age") is not None else None)}
+        <div><div class="k">Status</div><div class="v"><span class="pill {status_tone}">{escape(str(status)).title()}</span></div></div>
+        {field("Registered", fmt_ts(cow_data.get("registration_date")))}
+      </div>
+    </div>
+  </div>
+  <div class="pp-foot">
+    <div class="note">This record is generated from the PashuPrint registry. Identity is established by the animal's muzzle print;
+    every verification below is logged and time-stamped.</div>
+    <div class="pp-qr"><img src="{qr_uri}" alt="Passport QR code"/><div class="cap">Scan to verify</div></div>
+  </div>
+</div>
+""")
+
+# --- VERIFICATION HISTORY TIMELINE ---
+section("Verification & claim history", "Newest first. Every check made against this animal.")
+
+if not history_data:
+    callout("neutral", "No verification history has been recorded for this animal yet.")
 else:
-    # --- UI/UX: Better selector design ---
-    st.markdown("### 🔍 Search Registry")
-    cow_ids = [animal['cow_id'] for animal in all_animals]
-
-    default_index = 0
-    if 'selected_cow_id' in st.session_state and st.session_state['selected_cow_id'] in cow_ids:
-        default_index = cow_ids.index(st.session_state['selected_cow_id'])
-
-    selected_cow_id = st.selectbox("Select or type Cow ID to view passport:", options=cow_ids, index=default_index, label_visibility="collapsed")
-    st.divider()
-
-    # --- DISPLAY AREA ---
-    if selected_cow_id:
-        cow_data = db.get_animal(selected_cow_id)
-        history_data = db.get_verification_history(selected_cow_id)
-
-        # UI/UX: Use a container to group the passport data like a real ID card
-        with st.container(border=True):
-            col1, col2, col3 = st.columns([1.5, 2, 1])
-
-            with col1:
-                # Muzzle Photo with nice caption
-                photo_path = cow_data.get('muzzle_photo_path')
-                if photo_path:
-                    st.image(photo_path, caption=f"Verified Muzzle: {selected_cow_id}", use_container_width=True)
-                else:
-                    st.info("No muzzle photo on file for this animal.")
-
-            with col2:
-                st.markdown(f"## ID: {cow_data.get('cow_id')}")
-                st.markdown(f"**👤 Owner:** {cow_data.get('owner_name')} &nbsp;|&nbsp; **📄 Policy:** `{cow_data.get('policy_id')}`")
-
-                # UI/UX: Use Metric cards for quick stats
-                met1, met2, met3 = st.columns(3)
-                met1.metric("Breed", cow_data.get('breed'))
-                met2.metric("Age", f"{cow_data.get('age')} Yrs")
-
-                status = cow_data.get('status', 'active')
-                # Add emoji to metric based on status
-                met3.metric("Status", f"🟢 {status}" if status == "active" else f"🔴 {status}")
-
-                st.caption(f"**Registered on:** {cow_data.get('registration_date')}")
-
-            with col3:
-                # --- QR CODE GENERATION ---
-                # No fixed public URL for this local/demo deployment, so the QR
-                # encodes a structured text payload built entirely from the
-                # selected cow's real database record (no hardcoded details).
-                st.markdown("<div style='text-align: center; color: gray;'>Scan to Verify</div>", unsafe_allow_html=True)
-                passport_payload = (
-                    "PashuPrint Livestock Passport\n"
-                    f"Cow ID: {cow_data.get('cow_id')}\n"
-                    f"Breed: {cow_data.get('breed')}\n"
-                    f"Age: {cow_data.get('age')} Yrs\n"
-                    f"Owner: {cow_data.get('owner_name')}\n"
-                    f"Policy ID: {cow_data.get('policy_id')}\n"
-                    f"Status: {cow_data.get('status')}\n"
-                    f"Registered: {cow_data.get('registration_date')}"
-                )
-                qr = qrcode.QRCode(box_size=4, border=1)
-                qr.add_data(passport_payload)
-                qr.make(fit=True)
-                img_qr = qr.make_image(fill_color="#064e3b", back_color="white")
-
-                buf = BytesIO()
-                img_qr.save(buf, format="PNG")
-                st.image(buf, use_container_width=True)
-
-        # --- VERIFICATION HISTORY TABLE ---
-        st.markdown("### 📋 Verification & Claim History")
-
-        if not history_data:
-            st.info("No verification history available for this animal.")
-        else:
-            df_history = pd.DataFrame(history_data)
-
-            # UI/UX: Format the dataframe to look much cleaner
-            display_cols = ['timestamp', 'verification_type', 'result_status', 'similarity_score']
-            existing_cols = [col for col in display_cols if col in df_history.columns]
-
-            df_display = df_history[existing_cols].copy()
-
-            # Clean up column names for display (e.g., 'result_status' -> 'Result Status')
-            df_display.columns = [col.replace('_', ' ').title() for col in df_display.columns]
-
-            # Use Streamlit's new dataframe styling to hide the index column (numbers on the left)
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
+    items = []
+    for ev in history_data:
+        label, tone = EVENT_LABELS.get(ev.get("result_status"), (str(ev.get("result_status")).replace("_", " ").title(), "muted"))
+        kind = TYPE_LABELS.get(ev.get("verification_type"), str(ev.get("verification_type")).title())
+        score = ev.get("similarity_score")
+        score_html = f'<div class="tl-score">{score * 100:.1f}%</div>' if score is not None else ""
+        items.append(
+            f'<div class="tl-item {tone}"><div><div class="tl-title">{escape(label)}</div>'
+            f'<div class="tl-sub">{escape(kind)} · {escape(fmt_ts(ev.get("timestamp")))}</div></div>{score_html}</div>'
+        )
+    html(f'<div class="tl">{"".join(items)}</div>')
